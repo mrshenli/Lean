@@ -67,7 +67,13 @@ namespace QuantConnect.Optimizer
         {
             lock (_locker)
             {
-                if (result?.Id > 0)
+                if (result == null)
+                {
+                    // one of the requested backtests failed
+                    return;
+                }
+
+                if (result.Id > 0)
                 {
                     if (Solution == null || Extremum.Better(Solution.Profit, result.Profit))
                     {
@@ -77,7 +83,7 @@ namespace QuantConnect.Optimizer
                     return;
                 }
 
-                foreach (var parameterSet in ParameterSetGenerator.Step(result?.ParameterSet, _args))
+                foreach (var parameterSet in ParameterSetGenerator.Step(result.ParameterSet, _args))
                 {
                     NewParameterSet?.Invoke(this, new OptimizationEventArgs(parameterSet));
                 }

@@ -15,10 +15,8 @@
 
 using Newtonsoft.Json;
 using QuantConnect.Configuration;
-using QuantConnect.Optimizer;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using Newtonsoft.Json.Linq;
 using QuantConnect.Util;
@@ -27,12 +25,13 @@ namespace QuantConnect.Optimizer.Launcher
 {
     public class Program
     {
-        public static void Main(string[] args)
+        public static void Main()
         {
             try
             {
-                var packet = new OptimizationNodePacket()
+                var packet = new OptimizationNodePacket
                 {
+                    OptimizationId = Guid.NewGuid().ToString(),
                     ParameterSetGenerator = Config.Get("optimization-parameter-set-generator", "GridSearch"),
                     OptimizationStrategy = Config.Get("optimization-strategy", "BruteForceOptimizer"),
                     Criterion =
@@ -43,6 +42,8 @@ namespace QuantConnect.Optimizer.Launcher
                         .ToHashSet()
                 };
                 var optimizer = new ConsoleLeanOptimizer(packet);
+
+                optimizer.Start();
             }
             catch (Exception e)
             {

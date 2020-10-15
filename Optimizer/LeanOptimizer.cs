@@ -14,27 +14,45 @@
 */
 
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Linq;
-using System.Runtime;
-using System.Threading.Tasks;
-using Newtonsoft.Json;
+using QuantConnect.Util;
 using Newtonsoft.Json.Linq;
 using QuantConnect.Logging;
-using QuantConnect.Packets;
-using QuantConnect.Util;
+using System.Collections.Concurrent;
 
 namespace QuantConnect.Optimizer
 {
-    public abstract class LeanOptimizer
+    /// <summary>
+    /// Base Lean optimizer class in charge of handling an optimization job packet
+    /// TODO: should allow optionally limiting the amount of parallel executions
+    /// </summary>
+    public abstract class LeanOptimizer : IDisposable
     {
+        /// <summary>
+        /// Collection holding <see cref="ParameterSet"/> for each backtest id we are waiting to finish
+        /// </summary>
         protected readonly ConcurrentDictionary<string, ParameterSet> ParameterSetForBacktest;
 
-        protected IOptimizationStrategy Strategy;
-        protected OptimizationNodePacket NodePacket;
+        /// <summary>
+        /// The optimization strategy being used
+        /// </summary>
+        protected readonly IOptimizationStrategy Strategy;
 
-        public LeanOptimizer(OptimizationNodePacket nodePacket)
+        /// <summary>
+        /// The optimization packet
+        /// </summary>
+        protected readonly OptimizationNodePacket NodePacket;
+
+        /// <summary>
+        /// Event triggered when the optimization work ended
+        /// </summary>
+        public event EventHandler Ended;
+
+        /// <summary>
+        /// Creates a new instance
+        /// </summary>
+        /// <param name="nodePacket">The optimization node packet to handle</param>
+        protected LeanOptimizer(OptimizationNodePacket nodePacket)
         {
             if (nodePacket.OptimizationParameters.IsNullOrEmpty())
             {
@@ -42,12 +60,14 @@ namespace QuantConnect.Optimizer
             }
 
             NodePacket = nodePacket;
-            Strategy = Composer.Instance.GetExportedValueByTypeName<IOptimizationStrategy>(NodePacket.OptimizationStrategy);
+            Strategy =
+                Composer.Instance.GetExportedValueByTypeName<IOptimizationStrategy>(NodePacket.OptimizationStrategy);
 
             ParameterSetForBacktest = new ConcurrentDictionary<string, ParameterSet>();
 
             Strategy.Initialize(
-                Composer.Instance.GetExportedValueByTypeName<IOptimizationParameterSetGenerator>(NodePacket.ParameterSetGenerator),
+                Composer.Instance.GetExportedValueByTypeName<IOptimizationParameterSetGenerator>(NodePacket
+                    .ParameterSetGenerator),
                 NodePacket.Criterion["extremum"] == "max"
                     ? new Maximization() as Extremum
                     : new Minimization(),
@@ -70,50 +90,85 @@ namespace QuantConnect.Optimizer
                         }
                         else
                         {
-                            Log.Error($"Optimization compute job could not be placed into the queue");
+                            Log.Error("LeanOptimizer.NewParameterSet(): Empty/null optimization compute job could not be placed into the queue");
                         }
                     }
                     catch (Exception ex)
                     {
-                        Log.Error($"OptimizationStrategy.NewParameterSet(): Error encountered while placing optimization message into the queue. Error: {ex.Message}");
+                        Log.Error($"LeanOptimizer.NewParameterSet(): Error encountered while placing optimization message into the queue: {ex.Message}");
                     }
                 }
             };
         }
 
-        public virtual void OnComplete() { }
-
+        /// <summary>
+        /// Starts the optimization
+        /// </summary>
         public virtual void Start()
         {
             Strategy.PushNewResults(OptimizationResult.Empty);
         }
 
-        public virtual void Abort() { }
+        /// <summary>
+        /// Triggers the optimization job end event
+        /// </summary>
+        protected virtual void TriggerOnEndEvent(EventArgs eventArgs)
+        {
+            Ended?.Invoke(this, eventArgs);
+        }
 
+        /// <summary>
+        /// Handles starting Lean for a given parameter set
+        /// </summary>
+        /// <param name="parameterSet">The parameter set for the backtest to run</param>
+        /// <returns>The new unique backtest id</returns>
         protected abstract string RunLean(ParameterSet parameterSet);
 
-        protected virtual void NewResult(string jsonString, string backtestId)
+        /// <summary>
+        /// Handles a new backtest json result matching a requested backtest id
+        /// </summary>
+        /// <param name="jsonBacktestResult">The backtest json result</param>
+        /// <param name="backtestId">The associated backtest id</param>
+        protected virtual void NewResult(string jsonBacktestResult, string backtestId)
         {
             OptimizationResult result;
+            ParameterSet parameterSet;
+
+            // we take a lock so that there is no race condition with launching Lean adding the new backtest id and receiving the backtest result for that id
+            // before it's even in the collection 'ParameterSetForBacktest'
             lock (ParameterSetForBacktest)
             {
-                ParameterSet parameterSet;
                 if (!ParameterSetForBacktest.TryRemove(backtestId, out parameterSet))
                 {
-                    Log.Error($"Optimization compute job with id '{backtestId}' was not found");
+                    Log.Error($"LeanOptimizer.NewResult(): Optimization compute job with id '{backtestId}' was not found");
                     return;
                 }
-                var value = JObject.Parse(jsonString).SelectToken(NodePacket.Criterion["name"]).Value<decimal>();
-
-                result = new OptimizationResult(value, parameterSet);
             }
 
-            Strategy.PushNewResults(result);
+            if (string.IsNullOrEmpty(jsonBacktestResult))
+            {
+                Log.Error($"LeanOptimizer.NewResult(): Got null/empty backtest result for backtest id '{backtestId}'");
+                Strategy.PushNewResults(null);
+            }
+            else
+            {
+                var value = JObject.Parse(jsonBacktestResult).SelectToken(NodePacket.Criterion["name"]).Value<decimal>();
+
+                result = new OptimizationResult(value, parameterSet);
+
+                Strategy.PushNewResults(result);
+            }
 
             if (!ParameterSetForBacktest.Any())
             {
-                OnComplete();
+                // TODO: could send winning backtest id/result?
+                TriggerOnEndEvent(EventArgs.Empty);
             }
         }
+
+        /// <summary>
+        /// Disposes of any resources
+        /// </summary>
+        public abstract void Dispose();
     }
 }

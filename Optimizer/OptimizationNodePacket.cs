@@ -27,44 +27,58 @@ namespace QuantConnect.Optimizer
         /// <summary>
         /// User Id placing request
         /// </summary>
-        [JsonProperty(PropertyName = "iUserID")]
-        public int UserId = 0;
+        [JsonProperty(PropertyName = "userId")]
+        public int UserId;
+
         /// User API Token
-        [JsonProperty(PropertyName = "sUserToken")]
+        [JsonProperty(PropertyName = "userToken")]
         public string UserToken = "";
+
         /// <summary>
         /// Project Id of the request
         /// </summary>
-        [JsonProperty(PropertyName = "iProjectID")]
-        public int ProjectId = 0;
+        [JsonProperty(PropertyName = "projectId")]
+        public int ProjectId;
 
+        /// <summary>
+        /// The unique optimization Id of the request
+        /// </summary>
+        [JsonProperty(PropertyName = "optimizationId")]
         public string OptimizationId = "";
 
         /// <summary>
         /// Optimization strategy name
         /// </summary>
+        [JsonProperty(PropertyName = "optimizationStrategy")]
         public string OptimizationStrategy = "";
 
         /// <summary>
         /// Parameter set generator name
         /// </summary>
+        [JsonProperty(PropertyName = "parameterSetGenerator")]
         public string ParameterSetGenerator = "";
 
         /// <summary>
         /// Optimization settings
         /// </summary>
+        [JsonProperty(PropertyName = "optimizationSettings")]
         public Dictionary<string, string> OptimizationSettings;
 
         /// <summary>
         /// Objective settings
         /// </summary>
+        [JsonProperty(PropertyName = "criterion")]
         public Dictionary<string, string> Criterion;
 
         /// <summary>
-        /// Optimization parameters
+        /// The user optimization parameters
         /// </summary>
+        [JsonProperty(PropertyName = "optimizationParameters")]
         public HashSet<OptimizationParameter> OptimizationParameters;
 
+        /// <summary>
+        /// Creates a new instance
+        /// </summary>
         public OptimizationNodePacket() : base(PacketType.OptimizationNode)
         {
 
